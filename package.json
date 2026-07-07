@@ -1,0 +1,46 @@
+{
+  "name": "codex-provider-switch",
+  "version": "0.1.0",
+  "description": "A TUI and CLI for switching Codex base_url and API keys.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Weihong-Liu/codex-provider-switch.git"
+  },
+  "homepage": "https://github.com/Weihong-Liu/codex-provider-switch#readme",
+  "bugs": {
+    "url": "https://github.com/Weihong-Liu/codex-provider-switch/issues"
+  },
+  "bin": {
+    "codex-provider-switch": "./bin/codex-provider-switch.js",
+    "cps": "./bin/codex-provider-switch.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node ./bin/codex-provider-switch.js",
+    "test": "node --test",
+    "pack:check": "npm pack --dry-run",
+    "prepublishOnly": "npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "codex",
+    "tui",
+    "openai",
+    "provider",
+    "cli"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "commander": "^14.0.0",
+    "picocolors": "^1.1.1"
+  }
+}
