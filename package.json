@@ -11,9 +11,13 @@
   "bugs": {
     "url": "https://github.com/Weihong-Liu/codex-provider-switch/issues"
   },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "bin": {
-    "codex-provider-switch": "./bin/codex-provider-switch.js",
-    "cps": "./bin/codex-provider-switch.js"
+    "codex-provider-switch": "bin/codex-provider-switch.js",
+    "cps": "bin/codex-provider-switch.js"
   },
   "files": [
     "bin",
