@@ -16,12 +16,41 @@ Open the settings screen directly:
 npx -y codex-provider-switch@latest settings
 ```
 
+Run directly from GitHub before publishing to npm:
+
+```bash
+npx -y github:Weihong-Liu/codex-provider-switch
+npx -y github:Weihong-Liu/codex-provider-switch settings
+```
+
 The package also exposes a short command after global install:
 
 ```bash
 npm install -g codex-provider-switch
 cps
 cps setup
+```
+
+Install globally from GitHub before publishing to npm:
+
+```bash
+npm install -g github:Weihong-Liu/codex-provider-switch
+cps
+cps setup
+```
+
+If the GitHub repo is private, authenticate first:
+
+```bash
+gh auth login
+gh auth setup-git
+```
+
+You can pin a specific branch, tag, or commit:
+
+```bash
+npx -y github:Weihong-Liu/codex-provider-switch#main
+npm install -g github:Weihong-Liu/codex-provider-switch#main
 ```
 
 ## Commands
