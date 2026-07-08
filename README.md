@@ -64,7 +64,7 @@ curl http://127.0.0.1:17888/__cps/health
 用命令添加：
 
 ```bash
-cps add --name inferlab --base-url https://crsapi.inferlab.tech --api-key sk-xxx
+cps add --name my-provider --base-url https://api.example.com --api-key sk-xxx
 ```
 
 也可以直接打开界面添加：
@@ -76,7 +76,7 @@ cps
 ## 切换 Provider
 
 ```bash
-cps use inferlab
+cps use my-provider
 ```
 
 如果已经启用 proxy 模式，这条命令不会再改 Codex 的 `auth.json`，只会修改当前 active provider。
@@ -120,6 +120,16 @@ cps proxy stop
 ```bash
 cps proxy disable
 ```
+
+## 架构图
+
+proxy 模式架构图：
+
+![proxy 模式架构图](docs/proxy-architecture.png)
+
+也可以打开 HTML 版本查看：
+
+[docs/proxy-architecture.html](docs/proxy-architecture.html)
 
 ## 常见问题
 
@@ -209,8 +219,8 @@ CPS_CODEX_AUTH=/path/to/auth.json
 cps
 cps setup
 cps list
-cps add --name inferlab --base-url https://crsapi.inferlab.tech --api-key sk-xxx
-cps use inferlab
+cps add --name my-provider --base-url https://api.example.com --api-key sk-xxx
+cps use my-provider
 cps proxy setup --start
 cps proxy status
 cps proxy restart
