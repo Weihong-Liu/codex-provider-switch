@@ -61,6 +61,10 @@ codex-provider-switch settings
 codex-provider-switch list
 codex-provider-switch add --name my-provider --base-url http://127.0.0.1:8080 --api-key sk-xxx
 codex-provider-switch use my-provider
+codex-provider-switch proxy setup
+codex-provider-switch proxy
+codex-provider-switch proxy status
+codex-provider-switch proxy disable
 codex-provider-switch doctor
 codex-provider-switch where
 ```
@@ -77,6 +81,52 @@ Provider records are stored at:
 
 The file is written with `0600` permissions because it contains API keys.
 
+## Proxy Mode
+
+Proxy mode is the best option when you keep multiple Codex processes open.
+Codex is configured once to call a local proxy, and `cps use <provider>` only changes the active provider used by that proxy.
+
+Set up Codex to use the local proxy:
+
+```bash
+cps proxy setup
+```
+
+After the first setup, restart already running Codex processes once so they pick up the local proxy URL. Future provider switches do not need a restart.
+
+Start the proxy in a terminal and keep it running:
+
+```bash
+cps proxy
+```
+
+Switch providers without restarting existing Codex processes:
+
+```bash
+cps use my-provider
+```
+
+Existing Codex processes continue to call the same local URL. The proxy reads the active provider on every request and injects that provider's API key before forwarding the request upstream.
+
+Check proxy status:
+
+```bash
+cps proxy status
+curl http://127.0.0.1:17888/__cps/health
+```
+
+Return to direct Codex config/auth writes:
+
+```bash
+cps proxy disable
+```
+
+Notes:
+
+1. `cps proxy` must be running for proxy mode requests to work.
+2. A request already streaming will keep using the provider it started with; the next request uses the newly active provider.
+3. The proxy listens on `127.0.0.1:17888` by default. Avoid binding it to a public interface unless you know exactly what you are doing.
+
 ## What It Changes
 
 When switching provider, the tool:
@@ -85,6 +135,8 @@ When switching provider, the tool:
 2. Updates `base_url` in the active `[model_providers.<name>]` table from `model_provider`.
 3. Updates `OPENAI_API_KEY` in `~/.codex/auth.json`.
 4. Marks the selected provider as active in the provider store.
+
+In proxy mode, switching provider only updates the active provider in the store. Codex keeps using the local proxy URL, and the proxy forwards each new request to the current active provider.
 
 If you need non-default Codex paths, run:
 
