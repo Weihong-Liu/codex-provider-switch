@@ -39,6 +39,14 @@ export function getStorePath(env = process.env) {
   return path.join(getConfigDir(env), 'providers.json');
 }
 
+export function getProxyPidPath(env = process.env) {
+  return path.join(getConfigDir(env), 'proxy.pid');
+}
+
+export function getProxyLogPath(env = process.env) {
+  return path.join(getConfigDir(env), 'proxy.log');
+}
+
 export function getCodexHome(env = process.env) {
   return resolvePath(env.CODEX_HOME || path.join(os.homedir(), '.codex'));
 }
