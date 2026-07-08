@@ -11,7 +11,13 @@ import {
   formatSwitchResult,
 } from './format.js';
 import { getStorePath } from './paths.js';
-import { startProxyServer } from './proxy.js';
+import {
+  readProxyHealth,
+  readProxyPid,
+  startProxyDaemon,
+  startProxyServer,
+  stopProxyDaemon,
+} from './proxy.js';
 import {
   addProvider,
   ensureStore,
@@ -193,21 +199,90 @@ export async function runCli(argv = process.argv, env = process.env) {
     .option('--host <host>', 'proxy host written to Codex config')
     .option('-p, --port <port>', 'proxy port written to Codex config')
     .option('--api-key <key>', 'local placeholder key written to Codex auth.json')
+    .option('--start', 'start the proxy in the background after setup')
     .action(async (options) => {
       const store = await ensureStore(env);
-      const proxy = proxyConfigFromOptions(store, { ...options, enabled: true });
+      const proxy = proxyConfigFromOptions(store, { ...options, enabled: true }, proxyCommand.opts());
       const result = await configureCodexProxy(store, proxy, env);
 
       store.proxy = proxy;
       await saveStore(store, env);
       console.log(formatProxySetupResult(result, proxy));
+
+      if (options.start) {
+        const started = await startProxyDaemon({ env, proxy, entryPath: process.argv[1], logger: silentLogger() });
+        console.log(formatProxyStartResult(started));
+      }
+    });
+
+  proxyCommand.command('start')
+    .description('Start the local proxy in the background')
+    .option('--host <host>', 'listen host')
+    .option('-p, --port <port>', 'listen port')
+    .action(async (options) => {
+      const store = await ensureStore(env);
+      const proxy = proxyConfigFromOptions(store, options, proxyCommand.opts());
+      store.proxy = normalizeProxyConfig({ ...proxy, enabled: true });
+      await saveStore(store, env);
+
+      const result = await startProxyDaemon({ env, proxy: store.proxy, entryPath: process.argv[1], logger: silentLogger() });
+      console.log(formatProxyStartResult(result));
     });
 
   proxyCommand.command('status')
     .description('Show local proxy mode status')
     .action(async () => {
       const store = await ensureStore(env);
-      console.log(formatProxyStatus(store));
+      const proxy = normalizeProxyConfig(store.proxy);
+      const [health, pid] = await Promise.all([
+        readProxyHealth(proxy),
+        readProxyPid(env),
+      ]);
+
+      console.log(formatProxyStatus(store, { ...health, pid }));
+      if (!health.running && store.proxy?.enabled) {
+        process.exitCode = 1;
+      }
+    });
+
+  proxyCommand.command('stop')
+    .description('Stop the background local proxy')
+    .action(async () => {
+      const result = await stopProxyDaemon({ env });
+
+      if (result.stopped) {
+        console.log(`${pc.green('CPS proxy stopped')} ${pc.dim(`pid ${result.pid}`)}`);
+        return;
+      }
+
+      if (result.reason === 'no-pid-file') {
+        console.log(`${pc.yellow('CPS proxy was not started by cps proxy start')}\n${pc.dim(`pid file missing: ${result.pidPath}`)}`);
+        process.exitCode = 1;
+        return;
+      }
+
+      if (result.reason === 'stale-pid') {
+        console.log(`${pc.yellow('Removed stale proxy pid file')} ${pc.dim(`pid ${result.pid}`)}`);
+        return;
+      }
+
+      console.log(`${pc.red('Failed to stop CPS proxy')} ${pc.dim(`pid ${result.pid}`)}`);
+      process.exitCode = 1;
+    });
+
+  proxyCommand.command('restart')
+    .description('Restart the local proxy in the background')
+    .option('--host <host>', 'listen host')
+    .option('-p, --port <port>', 'listen port')
+    .action(async (options) => {
+      await stopProxyDaemon({ env });
+      const store = await ensureStore(env);
+      const proxy = proxyConfigFromOptions(store, options, proxyCommand.opts());
+      store.proxy = normalizeProxyConfig({ ...proxy, enabled: true });
+      await saveStore(store, env);
+
+      const result = await startProxyDaemon({ env, proxy: store.proxy, entryPath: process.argv[1], logger: silentLogger() });
+      console.log(formatProxyStartResult(result));
     });
 
   proxyCommand.command('disable')
@@ -238,12 +313,14 @@ export async function runCli(argv = process.argv, env = process.env) {
   await program.parseAsync(argv);
 }
 
-function proxyConfigFromOptions(store, options = {}) {
+function proxyConfigFromOptions(store, options = {}, parentOptions = {}) {
+  const port = options.port ?? parentOptions.port;
+
   return normalizeProxyConfig({
     ...(store.proxy || {}),
     enabled: options.enabled ?? store.proxy?.enabled,
-    host: options.host ?? store.proxy?.host,
-    port: options.port === undefined ? store.proxy?.port : parsePortOption(options.port),
+    host: options.host ?? parentOptions.host ?? store.proxy?.host,
+    port: port === undefined ? store.proxy?.port : parsePortOption(port),
     apiKey: options.apiKey ?? store.proxy?.apiKey,
   });
 }
@@ -256,4 +333,28 @@ function parsePortOption(value) {
   }
 
   return port;
+}
+
+function formatProxyStartResult(result) {
+  const lines = [
+    result.started ? pc.green('CPS proxy started') : pc.green('CPS proxy already running'),
+    `${pc.dim('url')} ${result.health.url}`,
+  ];
+
+  if (result.pid) {
+    lines.push(`${pc.dim('pid')} ${result.pid}`);
+  }
+
+  if (result.logPath) {
+    lines.push(`${pc.dim('log')} ${result.logPath}`);
+  }
+
+  return lines.join('\n');
+}
+
+function silentLogger() {
+  return {
+    log() {},
+    error() {},
+  };
 }
