@@ -54,7 +54,7 @@ export function formatProxySetupResult(result, proxy) {
     `${pc.dim('listen')} ${getProxyBaseUrl(proxy)}`,
     `${pc.dim('Codex base_url')} ${result.proxyBaseUrl}`,
     `${pc.dim('model provider')} ${result.modelProvider}`,
-    `${pc.dim('next')} run ${pc.bold('cps proxy')} in a terminal`,
+    `${pc.dim('next')} run ${pc.bold('cps proxy start')} or keep ${pc.bold('cps proxy')} open in a terminal`,
     `${pc.dim('restart')} restart existing Codex processes once after setup`,
     `${pc.dim('backups')}`,
     backups,
@@ -70,15 +70,23 @@ export function formatProxySwitchResult(provider, proxy) {
   ].join('\n');
 }
 
-export function formatProxyStatus(store) {
+export function formatProxyStatus(store, runtime = null) {
   const proxy = store.proxy || {};
   const activeProvider = store.activeProvider
     ? store.providers.find((provider) => provider.id === store.activeProvider)
+    : null;
+  const runtimeLine = runtime
+    ? `${pc.dim('Proxy runtime')} ${runtime.running ? pc.green('running') : pc.yellow('stopped')}${runtime.pid ? ` ${pc.dim(`pid ${runtime.pid}`)}` : ''}`
+    : null;
+  const errorLine = runtime && !runtime.running && runtime.error
+    ? `${pc.dim('Runtime error')} ${runtime.error}`
     : null;
 
   return [
     `${pc.dim('Proxy mode')} ${proxy.enabled ? pc.green('enabled') : pc.dim('disabled')}`,
     `${pc.dim('Proxy URL')} ${getProxyBaseUrl(proxy)}`,
+    runtimeLine,
+    errorLine,
     `${pc.dim('Active provider')} ${activeProvider ? `${activeProvider.name} ${pc.dim(activeProvider.baseUrl)}` : '(none)'}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
