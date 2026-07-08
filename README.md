@@ -62,8 +62,11 @@ codex-provider-switch list
 codex-provider-switch add --name my-provider --base-url http://127.0.0.1:8080 --api-key sk-xxx
 codex-provider-switch use my-provider
 codex-provider-switch proxy setup
+codex-provider-switch proxy start
 codex-provider-switch proxy
 codex-provider-switch proxy status
+codex-provider-switch proxy stop
+codex-provider-switch proxy restart
 codex-provider-switch proxy disable
 codex-provider-switch doctor
 codex-provider-switch where
@@ -86,15 +89,21 @@ The file is written with `0600` permissions because it contains API keys.
 Proxy mode is the best option when you keep multiple Codex processes open.
 Codex is configured once to call a local proxy, and `cps use <provider>` only changes the active provider used by that proxy.
 
-Set up Codex to use the local proxy:
+Set up Codex to use the local proxy and start the proxy in the background:
 
 ```bash
-cps proxy setup
+cps proxy setup --start
 ```
 
 After the first setup, restart already running Codex processes once so they pick up the local proxy URL. Future provider switches do not need a restart.
 
-Start the proxy in a terminal and keep it running:
+If you already ran setup without `--start`, start the proxy in the background:
+
+```bash
+cps proxy start
+```
+
+You can also run the proxy in the foreground and keep that terminal open:
 
 ```bash
 cps proxy
@@ -115,6 +124,13 @@ cps proxy status
 curl http://127.0.0.1:17888/__cps/health
 ```
 
+Stop or restart the background proxy:
+
+```bash
+cps proxy stop
+cps proxy restart
+```
+
 Return to direct Codex config/auth writes:
 
 ```bash
@@ -123,7 +139,7 @@ cps proxy disable
 
 Notes:
 
-1. `cps proxy` must be running for proxy mode requests to work.
+1. `cps proxy start` or `cps proxy` must be running for proxy mode requests to work.
 2. A request already streaming will keep using the provider it started with; the next request uses the newly active provider.
 3. The proxy listens on `127.0.0.1:17888` by default. Avoid binding it to a public interface unless you know exactly what you are doing.
 
