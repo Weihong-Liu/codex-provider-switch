@@ -1,7 +1,11 @@
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 
-import { ensureStore, findProvider } from './store.js';
+import { getConfigDir, getProxyLogPath, getProxyPidPath } from './paths.js';
+import { ensureStore, findProvider, getProxyBaseUrl, normalizeProxyConfig } from './store.js';
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
@@ -55,6 +59,135 @@ export async function startProxyServer({
     process.once('SIGINT', shutdown);
     process.once('SIGTERM', shutdown);
   });
+}
+
+export async function startProxyDaemon({
+  env = process.env,
+  proxy,
+  entryPath = process.argv[1],
+  logger = console,
+} = {}) {
+  const normalizedProxy = normalizeProxyConfig(proxy);
+  const currentHealth = await readProxyHealth(normalizedProxy);
+
+  if (currentHealth.running) {
+    return {
+      started: false,
+      pid: await readProxyPid(env),
+      logPath: getProxyLogPath(env),
+      health: currentHealth,
+    };
+  }
+
+  await fs.mkdir(getConfigDir(env), { recursive: true, mode: 0o700 });
+  const logPath = getProxyLogPath(env);
+  const logFd = fsSync.openSync(logPath, 'a');
+  const args = [
+    entryPath,
+    'proxy',
+    '--host',
+    normalizedProxy.host,
+    '--port',
+    String(normalizedProxy.port),
+  ];
+  const child = spawn(process.execPath, args, {
+    detached: true,
+    stdio: ['ignore', logFd, logFd],
+    env: { ...process.env, ...env },
+  });
+
+  child.unref();
+  fsSync.closeSync(logFd);
+  await writeProxyPid(child.pid, env);
+
+  let health;
+  try {
+    health = await waitForProxyHealth(normalizedProxy, child.pid, 5000);
+  } catch (error) {
+    if (processExists(child.pid)) {
+      process.kill(child.pid, 'SIGTERM');
+    }
+    await fs.rm(getProxyPidPath(env), { force: true });
+    throw error;
+  }
+  logger.log?.(`CPS proxy started in background on ${health.url}`);
+
+  return {
+    started: true,
+    pid: child.pid,
+    logPath,
+    health,
+  };
+}
+
+export async function stopProxyDaemon({ env = process.env, timeoutMs = 5000 } = {}) {
+  const pid = await readProxyPid(env);
+  const pidPath = getProxyPidPath(env);
+
+  if (!pid) {
+    return { stopped: false, reason: 'no-pid-file', pidPath };
+  }
+
+  if (!processExists(pid)) {
+    await fs.rm(pidPath, { force: true });
+    return { stopped: false, reason: 'stale-pid', pid, pidPath };
+  }
+
+  process.kill(pid, 'SIGTERM');
+  const stopped = await waitForProcessExit(pid, timeoutMs);
+
+  if (stopped) {
+    await fs.rm(pidPath, { force: true });
+  }
+
+  return { stopped, pid, pidPath };
+}
+
+export async function readProxyHealth(proxy, { timeoutMs = 1200 } = {}) {
+  const normalizedProxy = normalizeProxyConfig(proxy);
+  const url = `${getProxyBaseUrl(normalizedProxy)}/__cps/health`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const text = await response.text();
+    let payload = null;
+
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = { raw: text };
+    }
+
+    return {
+      running: response.ok,
+      statusCode: response.status,
+      url,
+      payload,
+    };
+  } catch (error) {
+    return {
+      running: false,
+      url,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function readProxyPid(env = process.env) {
+  try {
+    const pid = Number((await fs.readFile(getProxyPidPath(env), 'utf8')).trim());
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 export async function handleProxyRequest(request, response, { env = process.env, logger = console } = {}) {
@@ -181,4 +314,60 @@ function writeJson(response, statusCode, payload) {
 
 function drainRequest(request) {
   request.resume();
+}
+
+async function writeProxyPid(pid, env) {
+  await fs.writeFile(getProxyPidPath(env), `${pid}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+}
+
+async function waitForProxyHealth(proxy, pid, timeoutMs) {
+  const start = Date.now();
+  let lastHealth = null;
+
+  while (Date.now() - start < timeoutMs) {
+    lastHealth = await readProxyHealth(proxy, { timeoutMs: 500 });
+    if (lastHealth.running) {
+      return lastHealth;
+    }
+
+    if (!processExists(pid)) {
+      throw new Error(`proxy process exited before becoming healthy: ${lastHealth.error || 'unknown error'}`);
+    }
+
+    await delay(150);
+  }
+
+  throw new Error(`proxy did not become healthy at ${lastHealth?.url || getProxyBaseUrl(proxy)} within ${timeoutMs}ms`);
+}
+
+async function waitForProcessExit(pid, timeoutMs) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    if (!processExists(pid)) {
+      return true;
+    }
+
+    await delay(100);
+  }
+
+  return !processExists(pid);
+}
+
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
