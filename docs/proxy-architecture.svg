@@ -23,6 +23,7 @@
           </pattern>
         </defs>
 
+        <rect width="1100" height="720" fill="#000000" />
         <rect width="1100" height="720" fill="url(#grid)" />
 
         <!-- Arrows -->
