@@ -4,7 +4,10 @@ import path from 'node:path';
 
 import { getConfigDir, getStorePath } from './paths.js';
 
-export const STORE_VERSION = 1;
+export const STORE_VERSION = 2;
+export const DEFAULT_PROXY_HOST = '127.0.0.1';
+export const DEFAULT_PROXY_PORT = 17888;
+export const DEFAULT_PROXY_API_KEY = 'cps-local-proxy';
 
 export function createEmptyStore() {
   return {
@@ -14,6 +17,12 @@ export function createEmptyStore() {
       configPath: null,
       authPath: null,
       modelProvider: null,
+    },
+    proxy: {
+      enabled: false,
+      host: DEFAULT_PROXY_HOST,
+      port: DEFAULT_PROXY_PORT,
+      apiKey: DEFAULT_PROXY_API_KEY,
     },
     providers: [],
   };
@@ -76,6 +85,7 @@ export function normalizeStore(raw) {
     authPath: store.codex?.authPath || null,
     modelProvider: store.codex?.modelProvider || null,
   };
+  store.proxy = normalizeProxyConfig(store.proxy);
 
   store.providers = Array.isArray(store.providers)
     ? store.providers.map((provider) => normalizeProvider(provider, now))
@@ -86,6 +96,28 @@ export function normalizeStore(raw) {
   }
 
   return store;
+}
+
+export function normalizeProxyConfig(proxy = {}) {
+  const port = Number(proxy?.port || DEFAULT_PROXY_PORT);
+  const host = String(proxy?.host || DEFAULT_PROXY_HOST).trim() || DEFAULT_PROXY_HOST;
+  const apiKey = String(proxy?.apiKey || DEFAULT_PROXY_API_KEY);
+
+  return {
+    enabled: proxy?.enabled === true,
+    host,
+    port: Number.isInteger(port) && port > 0 && port <= 65535 ? port : DEFAULT_PROXY_PORT,
+    apiKey,
+  };
+}
+
+export function getProxyBaseUrl(proxy = {}) {
+  const normalized = normalizeProxyConfig(proxy);
+  const host = normalized.host.includes(':') && !normalized.host.startsWith('[')
+    ? `[${normalized.host}]`
+    : normalized.host;
+
+  return `http://${host}:${normalized.port}`;
 }
 
 export function normalizeProvider(provider, now = new Date().toISOString()) {
