@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { getResolvedCodexPaths } from './paths.js';
-import { maskApiKey, pathExists } from './store.js';
+import { getProxyBaseUrl, maskApiKey, normalizeProxyConfig, pathExists } from './store.js';
 
 export async function switchCodexProvider(store, provider, env = process.env) {
   const { configPath, authPath, modelProvider: configuredModelProvider } = getResolvedCodexPaths(store, env);
@@ -20,6 +20,29 @@ export async function switchCodexProvider(store, provider, env = process.env) {
     configPath,
     authPath,
     modelProvider,
+    backups: [configBackup, authBackup].filter(Boolean),
+  };
+}
+
+export async function configureCodexProxy(store, proxyConfig, env = process.env) {
+  const proxy = normalizeProxyConfig(proxyConfig);
+  const proxyBaseUrl = getProxyBaseUrl(proxy);
+  const { configPath, authPath, modelProvider: configuredModelProvider } = getResolvedCodexPaths(store, env);
+  const configText = await fs.readFile(configPath, 'utf8');
+  const modelProvider = configuredModelProvider || readActiveModelProvider(configText) || 'OpenAI';
+  const updatedConfig = updateBaseUrlInToml(configText, modelProvider, proxyBaseUrl);
+  const configBackup = await backupFile(configPath);
+  const authBackup = await backupFile(authPath);
+
+  await fs.writeFile(configPath, updatedConfig, 'utf8');
+  await fs.chmod(configPath, 0o600).catch(() => {});
+  await writeAuthApiKey(authPath, proxy.apiKey);
+
+  return {
+    configPath,
+    authPath,
+    modelProvider,
+    proxyBaseUrl,
     backups: [configBackup, authBackup].filter(Boolean),
   };
 }
