@@ -1,196 +1,228 @@
 # codex-provider-switch
 
-A small TUI and CLI for switching Codex provider `base_url` and `OPENAI_API_KEY`.
+一个用来切换 Codex provider 的小工具。
 
-## Quick Start
+它可以管理多个 provider 的 `base_url` 和 `API Key`，并支持本地 proxy 模式。开启 proxy 模式后，多个已经打开的 Codex 进程也可以在下一次请求时使用新的 provider，不需要每次切换都重启 Codex。
 
-Run the main TUI without installing anything globally:
+## 安装
 
-```bash
-npx -y codex-provider-switch@latest
-```
-
-Open the settings screen directly:
-
-```bash
-npx -y codex-provider-switch@latest settings
-```
-
-Run directly from GitHub before publishing to npm:
-
-```bash
-npx -y github:Weihong-Liu/codex-provider-switch
-npx -y github:Weihong-Liu/codex-provider-switch settings
-```
-
-The package also exposes a short command after global install:
-
-```bash
-npm install -g codex-provider-switch
-cps
-cps setup
-```
-
-Install globally from GitHub before publishing to npm:
+现在可以直接从 GitHub 安装：
 
 ```bash
 npm install -g github:Weihong-Liu/codex-provider-switch
+```
+
+安装后会有两个命令：
+
+```bash
 cps
-cps setup
-```
-
-If the GitHub repo is private, authenticate first:
-
-```bash
-gh auth login
-gh auth setup-git
-```
-
-You can pin a specific branch, tag, or commit:
-
-```bash
-npx -y github:Weihong-Liu/codex-provider-switch#main
-npm install -g github:Weihong-Liu/codex-provider-switch#main
-```
-
-## Commands
-
-```bash
 codex-provider-switch
-codex-provider-switch settings
-codex-provider-switch list
-codex-provider-switch add --name my-provider --base-url http://127.0.0.1:8080 --api-key sk-xxx
-codex-provider-switch use my-provider
-codex-provider-switch proxy setup
-codex-provider-switch proxy start
-codex-provider-switch proxy
-codex-provider-switch proxy status
-codex-provider-switch proxy stop
-codex-provider-switch proxy restart
-codex-provider-switch proxy disable
-codex-provider-switch doctor
-codex-provider-switch where
 ```
 
-`settings` also has the alias `setup`.
+两个命令是一样的，`cps` 更短。
 
-## Storage
+更新到最新版：
 
-Provider records are stored at:
-
-```text
-~/.config/codex-provider-switch/providers.json
+```bash
+npm install -g github:Weihong-Liu/codex-provider-switch
 ```
 
-The file is written with `0600` permissions because it contains API keys.
+不想全局安装，也可以临时运行：
 
-## Proxy Mode
+```bash
+npx -y github:Weihong-Liu/codex-provider-switch
+```
 
-Proxy mode is the best option when you keep multiple Codex processes open.
-Codex is configured once to call a local proxy, and `cps use <provider>` only changes the active provider used by that proxy.
+## 推荐用法
 
-Set up Codex to use the local proxy and start the proxy in the background:
+推荐使用 proxy 模式。
+
+第一次配置：
 
 ```bash
 cps proxy setup --start
 ```
 
-After the first setup, restart already running Codex processes once so they pick up the local proxy URL. Future provider switches do not need a restart.
+这条命令会做两件事：
 
-If you already ran setup without `--start`, start the proxy in the background:
+1. 把 Codex 的 `base_url` 改成本地代理地址：`http://127.0.0.1:17888`
+2. 在后台启动 `cps` 本地代理
 
-```bash
-cps proxy start
-```
+第一次开启 proxy 模式后，请把已经打开的 Codex 进程重启一次。以后再切 provider 就不需要重启了。
 
-You can also run the proxy in the foreground and keep that terminal open:
-
-```bash
-cps proxy
-```
-
-Switch providers without restarting existing Codex processes:
-
-```bash
-cps use my-provider
-```
-
-Existing Codex processes continue to call the same local URL. The proxy reads the active provider on every request and injects that provider's API key before forwarding the request upstream.
-
-Check proxy status:
+查看代理是否正在运行：
 
 ```bash
 cps proxy status
 curl http://127.0.0.1:17888/__cps/health
 ```
 
-Stop or restart the background proxy:
+如果显示 `Proxy runtime running`，说明代理正在运行。
+
+## 添加 Provider
+
+用命令添加：
 
 ```bash
-cps proxy stop
+cps add --name inferlab --base-url https://crsapi.inferlab.tech --api-key sk-xxx
+```
+
+也可以直接打开界面添加：
+
+```bash
+cps
+```
+
+## 切换 Provider
+
+```bash
+cps use inferlab
+```
+
+如果已经启用 proxy 模式，这条命令不会再改 Codex 的 `auth.json`，只会修改当前 active provider。
+
+只要 `cps proxy start` 正在运行，Codex 下一次请求就会走新的 provider。
+
+## Proxy 常用命令
+
+后台启动 proxy：
+
+```bash
+cps proxy start
+```
+
+前台启动 proxy，终端需要一直开着：
+
+```bash
+cps proxy
+```
+
+查看状态：
+
+```bash
+cps proxy status
+```
+
+重启 proxy：
+
+```bash
 cps proxy restart
 ```
 
-Return to direct Codex config/auth writes:
+停止后台 proxy：
+
+```bash
+cps proxy stop
+```
+
+关闭 proxy 模式，恢复成直接写入 Codex 配置：
 
 ```bash
 cps proxy disable
 ```
 
-Notes:
+## 常见问题
 
-1. `cps proxy start` or `cps proxy` must be running for proxy mode requests to work.
-2. A request already streaming will keep using the provider it started with; the next request uses the newly active provider.
-3. The proxy listens on `127.0.0.1:17888` by default. Avoid binding it to a public interface unless you know exactly what you are doing.
+### Codex 报 `error sending request for url (http://127.0.0.1:17888/responses)`
 
-## What It Changes
+通常是 proxy 没有运行。
 
-When switching provider, the tool:
-
-1. Backs up `~/.codex/config.toml` and `~/.codex/auth.json` with timestamped `.bak-YYYYMMDD-HHMMSS` files.
-2. Updates `base_url` in the active `[model_providers.<name>]` table from `model_provider`.
-3. Updates `OPENAI_API_KEY` in `~/.codex/auth.json`.
-4. Marks the selected provider as active in the provider store.
-
-In proxy mode, switching provider only updates the active provider in the store. Codex keeps using the local proxy URL, and the proxy forwards each new request to the current active provider.
-
-If you need non-default Codex paths, run:
+运行：
 
 ```bash
-codex-provider-switch settings
+cps proxy start
+cps proxy status
 ```
 
-Or set:
+再检查：
+
+```bash
+curl http://127.0.0.1:17888/__cps/health
+```
+
+### `cps proxy setup` 后还是不生效
+
+`cps proxy setup` 只负责改 Codex 配置。如果没有加 `--start`，还需要再运行：
+
+```bash
+cps proxy start
+```
+
+第一次 setup 后，已经打开的 Codex 进程还记着旧配置，所以需要重启一次 Codex。
+
+### 切换 provider 后正在输出的请求会变吗
+
+不会。
+
+已经开始 streaming 的请求会继续使用它开始时的 provider。下一次新请求才会使用新的 active provider。
+
+### 默认端口是多少
+
+默认监听：
+
+```text
+127.0.0.1:17888
+```
+
+不要把 proxy 绑定到公网地址，除非你明确知道自己在做什么。
+
+## 配置和数据存放位置
+
+provider 数据保存在：
+
+```text
+~/.config/codex-provider-switch/providers.json
+```
+
+这个文件里有 API Key，工具会用 `0600` 权限写入。
+
+proxy 日志和 pid 文件也在同一个目录：
+
+```text
+~/.config/codex-provider-switch/proxy.log
+~/.config/codex-provider-switch/proxy.pid
+```
+
+Codex 默认配置文件：
+
+```text
+~/.codex/config.toml
+~/.codex/auth.json
+```
+
+如果你的 Codex 配置不在默认位置，可以运行：
+
+```bash
+cps setup
+```
+
+或者设置环境变量：
 
 ```bash
 CPS_CODEX_CONFIG=/path/to/config.toml
 CPS_CODEX_AUTH=/path/to/auth.json
 ```
 
-## Development
+## 常用命令速查
+
+```bash
+cps
+cps setup
+cps list
+cps add --name inferlab --base-url https://crsapi.inferlab.tech --api-key sk-xxx
+cps use inferlab
+cps proxy setup --start
+cps proxy status
+cps proxy restart
+cps proxy stop
+cps doctor
+cps where
+```
+
+## 开发
 
 ```bash
 npm install
 npm test
 npm run pack:check
 ```
-
-## Publish
-
-Upload to GitHub:
-
-```bash
-git init
-git add .
-git commit -m "Initial release"
-gh repo create Weihong-Liu/codex-provider-switch --private --source=. --remote=origin --push
-```
-
-Publish to npm so `npx -y codex-provider-switch@latest` works:
-
-```bash
-npm login
-npm publish
-```
-
-If you want to publish under another package name, change `name` in `package.json` before publishing.
