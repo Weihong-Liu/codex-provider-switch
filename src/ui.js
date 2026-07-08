@@ -10,8 +10,15 @@ import {
 } from '@clack/prompts';
 import pc from 'picocolors';
 
-import { inspectCodex, switchCodexProvider } from './codex.js';
-import { formatCodexStatus, formatProviderList, formatSwitchResult } from './format.js';
+import { configureCodexProxy, inspectCodex, switchCodexProvider } from './codex.js';
+import {
+  formatCodexStatus,
+  formatProviderList,
+  formatProxySetupResult,
+  formatProxyStatus,
+  formatProxySwitchResult,
+  formatSwitchResult,
+} from './format.js';
 import { APP_NAME, getResolvedCodexPaths } from './paths.js';
 import { FIELD_BACK, FIELD_CANCEL, fieldInput } from './prompts.js';
 import {
@@ -19,6 +26,7 @@ import {
   ensureStore,
   findProvider,
   maskApiKey,
+  normalizeProxyConfig,
   removeProvider,
   saveStore,
   setActiveProvider,
@@ -38,15 +46,23 @@ export async function runTui(env = process.env) {
   while (true) {
     store = await ensureStore(env);
     const status = await inspectCodex(store, env);
-    note(`${formatCodexStatus(status)}\n\n${formatProviderList(store)}`, 'Status');
+    note(`${formatCodexStatus(status)}\n\n${formatProxyStatus(store)}\n\n${formatProviderList(store)}`, 'Status');
 
     const action = await promptValue(select({
       message: '选择操作',
       options: [
-        { value: 'switch', label: '切换 provider', hint: '写入 Codex config/auth' },
+        {
+          value: 'switch',
+          label: '切换 provider',
+          hint: store.proxy?.enabled ? '更新本地 proxy active provider' : '写入 Codex config/auth',
+        },
         { value: 'add', label: '新增 provider', hint: 'base_url + API key' },
         { value: 'edit', label: '编辑 provider' },
         { value: 'delete', label: '删除 provider' },
+        { value: 'proxy', label: '启用 proxy 模式', hint: 'Codex 连接本地代理' },
+        ...(store.proxy?.enabled ? [
+          { value: 'proxy-disable', label: '关闭 proxy 模式', hint: '恢复直接写入当前 provider' },
+        ] : []),
         { value: 'settings', label: '设置 Codex 路径' },
         { value: 'doctor', label: '诊断配置' },
         { value: 'quit', label: '退出' },
@@ -67,6 +83,10 @@ export async function runTui(env = process.env) {
         await editProviderFlow(store, env);
       } else if (action === 'delete') {
         await deleteProviderFlow(store, env);
+      } else if (action === 'proxy') {
+        await proxySetupFlow(store, env);
+      } else if (action === 'proxy-disable') {
+        await proxyDisableFlow(store, env);
       } else if (action === 'settings') {
         await settingsFlow(store, env);
       } else if (action === 'doctor') {
@@ -106,6 +126,13 @@ async function switchProviderFlow(store, env) {
   }));
 
   if (!shouldSwitch) {
+    return;
+  }
+
+  if (store.proxy?.enabled) {
+    const activeProvider = setActiveProvider(store, provider);
+    await saveStore(store, env);
+    note(formatProxySwitchResult(activeProvider || provider, store.proxy), 'Proxy');
     return;
   }
 
@@ -322,6 +349,75 @@ async function settingsFlow(store, env) {
   note('设置已保存。', 'Settings');
 }
 
+async function proxySetupFlow(store, env) {
+  const initialProxy = normalizeProxyConfig(store.proxy);
+  const draft = await runFieldWizard({
+    initialValues: {
+      host: initialProxy.host,
+      port: String(initialProxy.port),
+    },
+    steps: [
+      {
+        label: 'Proxy host',
+        input: (values) => ({
+          message: 'Proxy host',
+          initialValue: values.host,
+        }),
+        assign: (values, value) => {
+          values.host = String(value || '').trim();
+        },
+      },
+      {
+        label: 'Proxy port',
+        input: (values) => ({
+          message: 'Proxy port',
+          initialValue: values.port,
+          validate: validateProxyPort,
+        }),
+        assign: (values, value) => {
+          values.port = String(value || '').trim();
+        },
+      },
+    ],
+  });
+  const proxy = normalizeProxyConfig({
+    ...initialProxy,
+    enabled: true,
+    host: draft.host,
+    port: draft.port,
+  });
+  const result = await configureCodexProxy(store, proxy, env);
+
+  store.proxy = proxy;
+  await saveStore(store, env);
+  note(formatProxySetupResult(result, proxy), 'Proxy');
+}
+
+async function proxyDisableFlow(store, env) {
+  const shouldDisable = await promptBack(confirm({
+    message: '确认关闭 proxy 模式？',
+    initialValue: true,
+  }));
+
+  if (!shouldDisable) {
+    return;
+  }
+
+  const provider = store.activeProvider ? findProvider(store, store.activeProvider) : null;
+  store.proxy = normalizeProxyConfig({ ...store.proxy, enabled: false });
+
+  if (!provider) {
+    await saveStore(store, env);
+    note('Proxy 模式已关闭。当前没有 active provider，未修改 Codex config/auth。', 'Proxy');
+    return;
+  }
+
+  const result = await switchCodexProvider(store, provider, env);
+  const activeProvider = setActiveProvider(store, provider);
+  await saveStore(store, env);
+  note(formatSwitchResult(activeProvider || provider, result), 'Proxy 模式已关闭');
+}
+
 async function doctorFlow(store, env) {
   const status = await inspectCodex(store, env);
   note(formatCodexStatus(status), 'Doctor');
@@ -339,6 +435,16 @@ async function doctorFlow(store, env) {
       { value: 'back', label: '返回上一层' },
     ],
   }));
+}
+
+function validateProxyPort(value) {
+  const port = Number(value);
+
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    return '请输入 1-65535 之间的端口';
+  }
+
+  return undefined;
 }
 
 async function chooseProvider(store, message) {
